@@ -1,57 +1,66 @@
 import { createContext, useState, useContext, useEffect } from "react";
+import type { ReactNode } from "react";
+import type { CartItem } from "../types";
 
-const CartContext = createContext<any>(null);
+type CartContextType = {
+    cart: CartItem[];
+    addToCart: (dish: CartItem) => void;
+    removeFromCart: (dishId: number) => void;
+    clearCart: () => void;
+    isInCart: (dishId: number) => boolean;
+};
 
-export const useCartContext = () => useContext(CartContext);
+const CartContext = createContext<CartContextType | null>(null);
 
-export const CartProvider = ({ children }: { children: React.ReactNode }) => {
-    const [cart, setCartState] = useState<any>([]);
+export const useCartContext = (): CartContextType => {
+    const ctx = useContext(CartContext);
+    if (!ctx) {
+        throw new Error("useCartContext must be used inside <CartProvider>");
+    }
+    return ctx;
+};
 
-    // Helper function to update cart state and sync with local storage
-    const updateCart = (newCart: any) => {
-        setCartState(newCart);
-        localStorage.setItem("cart", JSON.stringify(newCart));
-    };
+const loadCart = (): CartItem[] => {
+    try {
+        const stored = localStorage.getItem("cart");
+        return stored ? JSON.parse(stored) : [];
+    } catch {
+        return [];
+    }
+};
 
+export const CartProvider = ({ children }: { children: ReactNode }) => {
+    const [cart, setCart] = useState<CartItem[]>(loadCart);
+
+    // Keep localStorage in sync with the cart state
     useEffect(() => {
-        const storedDishes = localStorage.getItem("cart");
-        if (storedDishes) {
-            setCartState(JSON.parse(storedDishes));
-        }
-    }, []);
+        localStorage.setItem("cart", JSON.stringify(cart));
+    }, [cart]);
 
-    const addToCart = (dish: any) => {
-        const existingDish = cart.find((item: any) => item.id === dish.id);
-        if (existingDish) {
-            updateCart(
-                cart.map((item: any) =>
-                    item.id === dish.id
-                        ? { ...item, quantity: dish.quantity }
-                        : item
-                )
-            );
-        } else {
-            updateCart([...cart, dish]);
-        }
+    const addToCart = (dish: CartItem) => {
+        setCart((prev) =>
+            prev.some((item) => item.id === dish.id)
+                ? prev.map((item) =>
+                      item.id === dish.id
+                          ? { ...item, quantity: dish.quantity }
+                          : item
+                  )
+                : [...prev, dish]
+        );
     };
 
     const removeFromCart = (dishId: number) => {
-        updateCart(cart.filter((dish: any) => dish.id !== dishId));
+        setCart((prev) => prev.filter((dish) => dish.id !== dishId));
     };
 
-    const isInCart = (dishId: number) => {
-        return cart.some((dish: any) => dish.id === dishId);
-    };
+    const clearCart = () => setCart([]);
 
-    const value = {
-        cart,
-        addToCart,
-        removeFromCart,
-        isInCart,
-    };
+    const isInCart = (dishId: number) => cart.some((dish) => dish.id === dishId);
 
     return (
-        <CartContext.Provider value={value}>
+        <CartContext.Provider
+            value={{ cart, addToCart, removeFromCart, clearCart, isInCart }}
+        >
             {children}
         </CartContext.Provider>
     );

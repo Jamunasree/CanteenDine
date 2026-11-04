@@ -1,24 +1,19 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useCartContext } from "../contexts/CartContext";
-import { useNavigate } from "react-router-dom"; // Import useNavigate
+import { useNavigate } from "react-router-dom";
 import "../css/Cart.css";
+import { API_URL } from "../config";
 
 function CartPage() {
-    const { cart, removeFromCart, addToCart } = useCartContext();
+    const { cart, removeFromCart, addToCart, clearCart } = useCartContext();
     const [showModal, setShowModal] = useState(false);
     const [customerName, setCustomerName] = useState("");
     const [phoneNumber, setPhoneNumber] = useState("");
     const [orderNumber, setOrderNumber] = useState<string | null>(null);
-    const [userId, setUserId] = useState<string | null>(null); // State for user ID
-    const [loading, setLoading] = useState(false); // Loading state for the order
-    const navigate = useNavigate(); // Initialize useNavigate
-
-    // Clear local storage when the component unmounts
-    useEffect(() => {
-        return () => {
-            localStorage.removeItem("cart"); // Clear the cart from local storage
-        };
-    }, []);
+    const [userId, setUserId] = useState<string | null>(null);
+    const [placedTotal, setPlacedTotal] = useState<number | null>(null);
+    const [loading, setLoading] = useState(false);
+    const navigate = useNavigate();
 
     // Increment the quantity of an item in the cart
     function incrementQuantity(itemId: number) {
@@ -27,10 +22,7 @@ function CartPage() {
             addToCart({ ...item, quantity: item.quantity + 1 });
         }
     }
-    const clearCart = () => {
-        localStorage.removeItem("cart"); // Clear the cart from local storage
-        cart.forEach((item) => removeFromCart(item.id)); // Clear all items from the cart state
-    };
+
     // Decrement the quantity of an item in the cart
     function decrementQuantity(itemId: number) {
         const item = cart.find((item) => item.id === itemId);
@@ -41,27 +33,31 @@ function CartPage() {
         }
     }
 
-    // Calculate the total price of items in the cart
-    const calculateTotal = () => {
-        return cart
-            .reduce((total, item) => total + item.price * item.quantity, 0)
-            .toFixed(2);
-    };
+    // Total price of the items currently in the cart
+    const calculateTotal = (): number =>
+        cart.reduce((total, item) => total + item.price * item.quantity, 0);
 
     // Handle placing the order
     const handlePlaceOrder = async () => {
-        if (!customerName || !phoneNumber) {
+        const name = customerName.trim();
+        const phone = phoneNumber.trim();
+
+        if (!name || !phone) {
             alert("Please fill in all fields.");
             return;
         }
+        if (!/^\d{10}$/.test(phone)) {
+            alert("Please enter a valid 10-digit phone number.");
+            return;
+        }
 
-        setLoading(true); // Set loading state
+        setLoading(true);
 
-        // Prepare the order data
+        // The backend finds or creates the user from the phone number
         const orderData = {
-            user_id: `USER-${Date.now()}-${Math.floor(Math.random() * 1000)}`, // Generate a unique user ID
-            phone: phoneNumber,
-            paymentMethod: "cash", // Default payment method
+            name,
+            phone,
+            paymentMethod: "cash",
             dishes: cart.map((item) => ({
                 dish_id: item.id,
                 quantity: item.quantity,
@@ -69,47 +65,45 @@ function CartPage() {
         };
 
         try {
-            // Send the order data to the backend
-            const response = await fetch("http://localhost:5000/checkout", {
+            const response = await fetch(`${API_URL}/checkout`, {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(orderData),
             });
 
             if (!response.ok) {
-                const errorData = await response.json();
-                alert(`Error: ${errorData.error}`);
-                setLoading(false);
+                const errorData = await response.json().catch(() => ({}));
+                alert(`Error: ${errorData.error ?? "Could not place the order"}`);
                 return;
             }
 
             const result = await response.json();
 
-            // Update the state with the response data
             setOrderNumber(result.orderId);
             setUserId(result.userId);
+            setPlacedTotal(result.totalAmount);
 
-            // Clear the cart
-            localStorage.removeItem("cart");
+            // Order is saved, so empty the cart (state + localStorage)
+            clearCart();
         } catch (error) {
             console.error("Error placing order:", error);
             alert("An error occurred while placing the order. Please try again.");
         } finally {
-            setLoading(false); // Reset loading state
+            setLoading(false);
         }
     };
 
-    // Handle closing the modal and navigating to the home page
+    // Close the popup. Only leave the page if the order was actually placed,
+    // otherwise the customer keeps their cart.
     const handleCloseModal = () => {
-        setShowModal(false); // Clear the cart from local storage
-        navigate("/"); // Navigate to the home page
-        clearCart(); // Clear the cart state
+        setShowModal(false);
+        if (orderNumber) {
+            navigate("/");
+        }
     };
 
-    // Render an empty cart message if the cart is empty
-    if (cart.length === 0) {
+    // Empty cart message (but not while the order confirmation is showing)
+    if (cart.length === 0 && !orderNumber) {
         return (
             <div className="cart-empty" style={{
                 display: 'flex',
@@ -143,19 +137,11 @@ function CartPage() {
                             <div className="cart-item-header">
                                 <h3 className="cart-item-name">{item.name}</h3>
                                 <div className="cart-item-quantity">
-                                    <button
-                                        onClick={() =>
-                                            decrementQuantity(item.id)
-                                        }
-                                    >
+                                    <button onClick={() => decrementQuantity(item.id)}>
                                         -
                                     </button>
                                     <span>{item.quantity}</span>
-                                    <button
-                                        onClick={() =>
-                                            incrementQuantity(item.id)
-                                        }
-                                    >
+                                    <button onClick={() => incrementQuantity(item.id)}>
                                         +
                                     </button>
                                 </div>
@@ -164,7 +150,7 @@ function CartPage() {
                                 {item.description}
                             </p>
                             <p className="cart-item-price">
-                            ₹{(item.price * item.quantity).toFixed(2)}
+                                ₹{(item.price * item.quantity).toFixed(2)}
                             </p>
                         </div>
 
@@ -183,8 +169,7 @@ function CartPage() {
             <div className="cart-footer">
                 <div className="cart-total">
                     <span>Total:</span>
-                    <span>
-                    ₹{calculateTotal()}</span>
+                    <span>₹{calculateTotal().toFixed(2)}</span>
                 </div>
                 <button
                     className="checkout-btn"
@@ -199,21 +184,25 @@ function CartPage() {
                 <div className="modal">
                     <div className="modal-content">
                         <h3>Order Summary</h3>
-                        <p>Total: ₹{calculateTotal()}</p>
+                        <p>Total: ₹{(placedTotal ?? calculateTotal()).toFixed(2)}</p>
                         <div className="input-group">
                             <label>Customer Name:</label>
                             <input
                                 type="text"
                                 value={customerName}
                                 onChange={(e) => setCustomerName(e.target.value)}
+                                disabled={!!orderNumber}
                             />
                         </div>
                         <div className="input-group">
                             <label>Phone Number:</label>
                             <input
-                                type="text"
+                                type="tel"
+                                inputMode="numeric"
+                                maxLength={10}
                                 value={phoneNumber}
                                 onChange={(e) => setPhoneNumber(e.target.value)}
+                                disabled={!!orderNumber}
                             />
                         </div>
                         {orderNumber ? (
@@ -226,7 +215,7 @@ function CartPage() {
                             <button
                                 className="place-order-btn"
                                 onClick={handlePlaceOrder}
-                                disabled={loading} // Disable button while loading
+                                disabled={loading}
                             >
                                 {loading ? "Placing Order..." : "Place Order"}
                             </button>

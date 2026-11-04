@@ -1,53 +1,42 @@
 import "../css/DishCard.css";
 import { useState, useEffect } from "react";
 import { useCartContext } from "../contexts/CartContext";
-import { toast } from 'react-toastify';
-type Dish = {
-    id: number;
-    name: string;
-    description: string;
-    imageUrl: string;
-    price: number;
-};
+import { toast } from "react-toastify";
+import type { Dish } from "../types";
 
 function DishCard({ Dish }: { Dish: Dish }) {
     const [quantity, setQuantity] = useState<number>(1);
     const [inCart, setInCart] = useState<boolean>(false);
-    const { addToCart } = useCartContext();
+    const { cart, addToCart } = useCartContext();
 
-    // Check if the dish is already in the cart or localStorage and set the initial quantity
+    // Keep the quantity in sync with what is actually in the cart
+    // (resets to 1 when the dish is not in the cart, e.g. after an order)
     useEffect(() => {
-        const storedCart = localStorage.getItem("cart");
-        if (storedCart) {
-            const parsedCart = JSON.parse(storedCart);
-            const existingDish = parsedCart.find((item: any) => item.id === Dish.id);
-            if (existingDish) {
-                setQuantity(existingDish.quantity);
-            }
-        }
-    }, [Dish.id]);
+        const existingDish = cart.find((item) => item.id === Dish.id);
+        setQuantity(existingDish ? existingDish.quantity : 1);
+    }, [Dish.id, cart]);
 
     function onAddToCart() {
         setInCart(true);
-        setQuantity(quantity); // Start with a quantity of 1
     }
 
     function confirmAddToCart() {
-        addToCart({ ...Dish, quantity }); // Reflect changes in the cart and localStorage
+        addToCart({ ...Dish, quantity });
         setInCart(false);
         toast.success(`${Dish.name} added to cart!`);
     }
 
     function incrementQuantity() {
-        setQuantity((prevQuantity) => prevQuantity + 1); // Update quantity locally
+        setQuantity((prevQuantity) => prevQuantity + 1);
     }
 
     function decrementQuantity() {
         if (quantity > 1) {
-            setQuantity((prevQuantity) => prevQuantity - 1); // Update quantity locally
+            setQuantity((prevQuantity) => prevQuantity - 1);
         } else {
+            // Never let the quantity drop to 0, the backend rejects it
             setInCart(false);
-            setQuantity(0);
+            setQuantity(1);
         }
     }
 

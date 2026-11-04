@@ -1,57 +1,48 @@
 import DishCard from "../components/DishCard";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import "../css/Home.css";
+import { API_URL } from "../config";
+import type { Dish } from "../types";
+
+const statusStyle = { color: "white", textAlign: "center" as const, marginTop: "2rem" };
 
 function Home() {
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<{ id: number; name: string; description: string; imageUrl: string; no_of_times_ordered: number; price: number }[]>([]);
-  const [dishes, setDishes] = useState<{ id: number; name: string; description: string; imageUrl: string; no_of_times_ordered: number; price: number }[]>([]);
+  const [dishes, setDishes] = useState<Dish[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Fetch dishes from the server
   useEffect(() => {
     const fetchDishes = async () => {
       try {
-        const response = await fetch("http://localhost:5000/menu");
+        const response = await fetch(`${API_URL}/menu`);
         if (!response.ok) {
           throw new Error("Failed to fetch dishes");
         }
-        const data = await response.json();
-        setDishes(data);
-        setSearchResults(getTopDishes(data)); // Pass fetched data to getTopDishes
-      } catch (error) {
-        console.error("Error fetching dishes:", error);
+        setDishes(await response.json());
+      } catch (err) {
+        console.error("Error fetching dishes:", err);
+        setError("Could not load the menu. Is the backend running?");
+      } finally {
+        setLoading(false);
       }
     };
 
     fetchDishes();
   }, []);
 
-  // Function to get top 10 dishes sorted by orders
-  const getTopDishes = (dishesArray: typeof dishes) => {
-    return [...dishesArray].sort((a, b) => b.no_of_times_ordered - a.no_of_times_ordered).slice(0, 10);
-  };
-
-  const handleSearch = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-
-    if (!searchQuery.trim()) {
-      // Reset to top 10 dishes if search query is empty
-      setSearchResults(getTopDishes(dishes));
-      return;
-    }
-
-    // Filter and sort dishes based on the search query
-    const filteredResults = dishes
-      .filter((dish) => dish.name.toLowerCase().includes(searchQuery.toLowerCase()))
-      .sort((a, b) => b.no_of_times_ordered - a.no_of_times_ordered)
-      .slice(0, 10);
-
-    setSearchResults(filteredResults);
-  };
+  // Live search; most ordered dishes first. Shows the whole menu when the box is empty.
+  const visibleDishes = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return dishes
+      .filter((dish) => dish.name.toLowerCase().includes(query))
+      .sort((a, b) => (b.no_of_times_ordered ?? 0) - (a.no_of_times_ordered ?? 0));
+  }, [dishes, searchQuery]);
 
   return (
     <div className="home">
-      <form onSubmit={handleSearch} className="search-form">
+      <form onSubmit={(e) => e.preventDefault()} className="search-form">
         <input
           type="text"
           placeholder="Search for your favorite food!!!"
@@ -63,8 +54,15 @@ function Home() {
           Search
         </button>
       </form>
+
+      {loading && <p style={statusStyle}>Loading menu...</p>}
+      {error && <p style={statusStyle}>{error}</p>}
+      {!loading && !error && visibleDishes.length === 0 && (
+        <p style={statusStyle}>No dishes found.</p>
+      )}
+
       <div className="dishes-grid">
-        {searchResults.map((dish) => (
+        {visibleDishes.map((dish) => (
           <DishCard Dish={dish} key={dish.id} />
         ))}
       </div>
